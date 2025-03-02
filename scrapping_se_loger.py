@@ -11,9 +11,9 @@ import json
 #from mistral import Mistral
 
 
-def scrapp_page(driver, num_page):
+def scrap_page(driver, num_page):
     '''
-    Outil de scrapping pour une seule page
+    Outil de scraping pour une seule page
     :param driver:
     :param num_page:
     :return:
@@ -82,9 +82,9 @@ def scrapp_page(driver, num_page):
 
 
 
-def se_loger_scrapping(driver,nbr_pages_left, logements = [], nbr_iterations = 0): #logement = liste de logements avec toutes les info
+def se_loger_scraping(driver,nbr_pages_left, logements = [], nbr_iterations = 0): #logement = liste de logements avec toutes les info
     '''
-    Version recursive, scrappe pager à page --
+    Version recursive, scrape page à page --
     :param driver:
     :param nbr_pages_left:
     :param logements:
@@ -108,26 +108,24 @@ def se_loger_scrapping(driver,nbr_pages_left, logements = [], nbr_iterations = 0
         except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
             print('pas de bouton "accepter", passe')
 
-        logements.extend(scrapp_page(driver, nbr_iterations))
+        logements.extend(scrap_page(driver, nbr_iterations))
     sleep(2)
-    print('Passage à la page suivante ....... Encore {}.'.format(nbr_pages_left) + ' pages ) scrapper')
-    return se_loger_scrapping(driver, nbr_pages_left -1, logements, nbr_iterations +1)
+    print('Passage à la page suivante ....... Encore {}.'.format(nbr_pages_left) + ' pages ) scraper')
+    return se_loger_scraping(driver, nbr_pages_left -1, logements, nbr_iterations +1)
 
 
 
 
 
 def make_it_structured_with_mistral(logements):
-    api_key = "YW76S25jxEUUlRqV7DHt2j10aOu676cR"
+    api_key = ""
     client = Mistral(api_key=api_key)
     model = 'mistral-small-latest'
 
-    # Initialisation du DataFrame avec les colonnes attendues
     df = pd.DataFrame(
         columns=["surface", "prix", 'localisation', "nombre_piece", 'meublé', "étage", 'piece', 'note_localisation',
                  'note_prix', 'note_équipement'])
 
-    # Boucle sur chaque logement pour extraire les informations
     for logement in logements:
         response = client.chat.complete(
             model=model,
@@ -159,7 +157,7 @@ if __name__ == "__main__":
 
 
     driver = webdriver.Chrome(options=options)
-    logements = se_loger_scrapping(driver,2)
+    logements = se_loger_scraping(driver,2)
 
     filename = "logements.json"
     with open(filename, "w", encoding="utf-8") as file:
