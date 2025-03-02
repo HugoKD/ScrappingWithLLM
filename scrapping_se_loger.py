@@ -5,12 +5,19 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from time import sleep
-from selenium.common.exceptions import NoSuchElementException, TimeoutException,StaleElementReferenceException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, StaleElementReferenceException, \
+    ElementClickInterceptedException
 import json
-from mistral import Mistral
+#from mistral import Mistral
 
 
 def scrapp_page(driver, num_page):
+    '''
+    Outil de scrapping pour une seule page
+    :param driver:
+    :param num_page:
+    :return:
+    '''
     print("Page number: ", num_page)
     loc_elements = driver.find_elements(By.XPATH, "//*[@data-testid='sl.explore.card-container']/a")
     sleep(2)
@@ -20,16 +27,24 @@ def scrapp_page(driver, num_page):
         if 'bellesdemeures' in element.get_attribute("href") or 'seloger' not in element.get_attribute("href"):
             print('page skipped')
             continue
-        element.click()  # on ouvre la page
+        try :
+            wait = WebDriverWait(driver, 10)
+            element = wait.until(EC.element_to_be_clickable(element))
+            element.click()  # on ouvre la page
+            sleep(2)
+        except NoSuchElementException:
+            print('Page skipped because element not found')
+            continue
+        except ElementClickInterceptedException:
+            print('Page skipped because element is intercepted by another element')
+            continue
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            continue
         sleep(2)
         driver.switch_to.window(driver.window_handles[-1])  # driver switch de page
 
         sleep(2)
-        try:
-            test = driver.find_element(By.XPATH, "//*[contains(@class, 'sc-jsJBEP iXSECa')]")
-            print(test.text)
-        except NoSuchElementException:
-            print("no element")
         # récupération d'informations
 
         try:
@@ -48,8 +63,8 @@ def scrapp_page(driver, num_page):
             localisation = driver.find_element(By.XPATH, "//*[@data-test='localization-wrapper']")
         except (NoSuchElementException, StaleElementReferenceException):
             localisation = 'None'
-
-        logements.append({'info_logement_' + str(i*27+num_page): info_logement.text,
+        #~ 27 elements par page
+        logements.append({'info_logement_' + str(i+num_page*27): info_logement.text,
                                            'description_logement_' + str(i+num_page*27): description_logement.text,
                                            'localisation_logement_' + str(i+num_page*27): localisation.text})
         i += 1
@@ -58,27 +73,48 @@ def scrapp_page(driver, num_page):
         driver.close()
         driver.switch_to.window(driver.window_handles[0])
 
-        sleep(2)  # Attendre avant de passer au prochain élément
-        print("logement " + str(i) + ' de la page : ' + num_page+  'done ...')
-    print('Page number: ', num_page, ' done ...')
+        sleep(2.5)  # Attendre avant de passer au prochain élément
+        print(logements[-1])
+        print("logement " + str(i) + ' de la page : ' + str(num_page)+  ' done ...')
+    print('Page number: ', str(num_page), ' done ...')
     return logements
 
 
-def se_loger_scrapping(driver,nbr_pages):
 
-    driver.get("https://google.com")
+
+def se_loger_scrapping(driver,nbr_pages_left, logements = [], nbr_iterations = 0): #logement = liste de logements avec toutes les info
+    '''
+    Version recursive, scrappe pager à page --
+    :param driver:
+    :param nbr_pages_left:
+    :param logements:
+    :param nbr_iterations: La premiere étant 0
+    :return:>
+    '''
+    if nbr_pages_left == 0:
+        return logements
+    else :
+        if nbr_iterations == 0:
+            driver.get("https://www.seloger.com/immobilier/locations/immo-paris-75/bien-appartement/type-studio/")
+        else :
+            driver.get("https://www.seloger.com/immobilier/locations/immo-paris-75/bien-appartement/type-studio/?LISTING-LISTpg="+str(nbr_iterations+2))
+
+        try :
+            accept_button = WebDriverWait(driver, 20).until(
+                EC.element_to_be_clickable((By.XPATH, "//*[@id='didomi-notice-agree-button']"))
+            )
+            accept_button.click()
+
+        except (NoSuchElementException, StaleElementReferenceException, TimeoutException):
+            print('pas de bouton "accepter", passe')
+
+        logements.extend(scrapp_page(driver, nbr_iterations))
     sleep(2)
-    '''accept_button = WebDriverWait(driver, 20).until(
-        EC.element_to_be_clickable((By.XPATH, "//*[@id='didomi-notice-agree-button']")))
-    accept_button.click()'''
+    print('Passage à la page suivante ....... Encore {}.'.format(nbr_pages_left) + ' pages ) scrapper')
+    return se_loger_scrapping(driver, nbr_pages_left -1, logements, nbr_iterations +1)
 
-    logements = []
-    for i in range(nbr_pages):
-        logements.extend(scrapp_page(driver, i))
-        driver.find_element(By.XPATH, "//*[@data-testid='gsl.uilib.Paging.nextButton']").click()
-        sleep(2)
 
-    return logements
+
 
 
 def make_it_structured_with_mistral(logements):
@@ -121,24 +157,13 @@ if __name__ == "__main__":
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument("--disable-blink-features=AutomationControlled")  # Éviter la détection Selenium
 
-    try:
-        driver = webdriver.Chrome(options=options)
-        Text = se_loger_scrapping(driver,10)
-    except:
-        driver = webdriver.Chrome(options=options)
-        driver.quit()
 
-        print("\nScrapper stopped, launching again in 4 seconds...")
-        sleep(4)
+    driver = webdriver.Chrome(options=options)
+    logements = se_loger_scrapping(driver,2)
 
-        ## driver config
-        driver = webdriver.Chrome(options=options)
-        sleep(2)
-        logements = se_loger_scrapping(driver, 10)
+    filename = "logements.json"
+    with open(filename, "w", encoding="utf-8") as file:
+        json.dump(logements, file, indent=4, ensure_ascii=False)
 
-        filename = "logements.json"
-        with open(filename, "w", encoding="utf-8") as file:
-            json.dump(logements, file, indent=4, ensure_ascii=False)
-
-        print(f"Le fichier '{filename}' a été enregistré avec succès.")
+    print(f"Le fichier '{filename}' a été enregistré avec succès.")
 
